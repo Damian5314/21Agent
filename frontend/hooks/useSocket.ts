@@ -7,6 +7,10 @@ interface AgentStatus {
   status: 'idle' | 'running' | 'paused'
   currentTask: string | null
   taskId: string | null
+  browser?: {
+    isRunning: boolean
+    currentUrl: string | null
+  }
 }
 
 interface LogEntry {
@@ -63,6 +67,20 @@ export const useSocket = () => {
       setCurrentStep(data.step)
     })
 
+    // Browser command results
+    newSocket.on('browser:command:result', (result: any) => {
+      console.log('Browser commando resultaat:', result)
+    })
+
+    newSocket.on('browser:command:error', (error: any) => {
+      console.error('Browser commando fout:', error)
+    })
+
+    newSocket.on('browser:status', (status: any) => {
+      console.log('Browser status update:', status)
+      setAgentStatus(prev => ({ ...prev, browser: status }))
+    })
+
     // Task events
     newSocket.on('task:created', (task: any) => {
       console.log('Nieuwe taak:', task)
@@ -101,6 +119,24 @@ export const useSocket = () => {
     setLogs([])
   }
 
+  const sendBrowserCommand = (command: string) => {
+    if (socket && isConnected) {
+      socket.emit('browser:command', { command })
+    }
+  }
+
+  const startBrowser = () => {
+    if (socket && isConnected) {
+      socket.emit('browser:start')
+    }
+  }
+
+  const stopBrowser = () => {
+    if (socket && isConnected) {
+      socket.emit('browser:stop')
+    }
+  }
+
   return {
     socket,
     isConnected,
@@ -110,6 +146,9 @@ export const useSocket = () => {
     startAgent,
     stopAgent,
     pauseAgent,
-    clearLogs
+    clearLogs,
+    sendBrowserCommand,
+    startBrowser,
+    stopBrowser
   }
 }

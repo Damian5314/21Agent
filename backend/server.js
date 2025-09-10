@@ -32,7 +32,6 @@ io.on('connection', (socket) => {
   
   socket.on('agent:start', (data) => {
     console.log('Agent start request:', data)
-    // Hier zou de agent gestart worden
     socket.emit('agent:status', { status: 'running' })
   })
   
@@ -44,6 +43,56 @@ io.on('connection', (socket) => {
   socket.on('agent:pause', () => {
     console.log('Agent pause request')
     socket.emit('agent:status', { status: 'paused' })
+  })
+  
+  // Browser command handling via Socket.IO
+  socket.on('browser:command', async (data) => {
+    console.log('Browser commando ontvangen:', data)
+    try {
+      const AgentService = require('./services/AgentService')
+      
+      // Initialize if needed (dit zou eigenlijk beter via een singleton of global instance)
+      if (!global.agentService) {
+        global.agentService = new AgentService(io)
+        await global.agentService.initialize()
+      }
+      
+      const result = await global.agentService.executeCommand(data.command)
+      socket.emit('browser:command:result', result)
+    } catch (error) {
+      console.error('Fout bij browser commando:', error)
+      socket.emit('browser:command:error', { error: error.message })
+    }
+  })
+  
+  socket.on('browser:start', async () => {
+    console.log('Browser start request')
+    try {
+      const AgentService = require('./services/AgentService')
+      
+      if (!global.agentService) {
+        global.agentService = new AgentService(io)
+      }
+      await global.agentService.initialize()
+      
+      socket.emit('browser:status', global.agentService.getBrowserStatus())
+    } catch (error) {
+      console.error('Fout bij browser start:', error)
+      socket.emit('browser:error', { error: error.message })
+    }
+  })
+  
+  socket.on('browser:stop', async () => {
+    console.log('Browser stop request')
+    try {
+      if (global.agentService) {
+        await global.agentService.closeBrowser()
+        socket.emit('browser:status', global.agentService.getBrowserStatus())
+      }
+    } catch (error) {
+      console.error('Fout bij browser stop:', error)
+      socket.emit('browser:error', { error: error.message })
+    }
   })
 })
 

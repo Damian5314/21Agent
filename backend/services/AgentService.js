@@ -1,13 +1,11 @@
-const { chromium } = require('playwright')
-const { GoogleGenerativeAI } = require('@google/generative-ai')
+const BrowserService = require('./BrowserService')
+const CommandInterpreter = require('./CommandInterpreter')
 
 class AgentService {
   constructor(io) {
     this.io = io
-    this.browser = null
-    this.page = null
-    this.genAI = null
-    this.model = null
+    this.browserService = new BrowserService()
+    this.commandInterpreter = new CommandInterpreter()
     this.status = 'idle'
     this.currentTask = null
     this.currentTaskId = null
@@ -17,19 +15,9 @@ class AgentService {
 
   async initialize() {
     try {
-      // Initialiseer Google AI
-      if (process.env.GOOGLE_AI_API_KEY) {
-        this.genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY)
-        this.model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash" })
-      }
-
-      // Initialiseer browser
-      this.browser = await chromium.launch({ 
-        headless: false, // Voor demo doeleinden
-        slowMo: 1000 // Langzamer voor zichtbaarheid
-      })
-
-      this.log('info', 'Agent service geïnitialiseerd', 'Browser en AI model geladen')
+      // Initialiseer browser service
+      await this.browserService.initialize()
+      this.log('info', 'Agent service geïnitialiseerd', 'Browser en AI command interpreter geladen')
     } catch (error) {
       this.log('error', 'Initialisatie gefaald', error.message)
       throw error
@@ -61,33 +49,27 @@ class AgentService {
 
   async executeTask() {
     try {
-      // Stap 1: Nieuwe browser pagina openen
-      await this.step('Nieuwe browser sessie starten')
-      this.page = await this.browser.newPage()
+      await this.step('Browser sessie controleren')
       
-      // Stap 2: Navigeer naar 21QUBZ (demo URL)
-      await this.step('Navigeren naar 21QUBZ testomgeving')
-      await this.page.goto(process.env.QUBZ_TEST_URL || 'https://example.com', { 
-        waitUntil: 'domcontentloaded' 
-      })
+      if (!this.browserService.isRunning) {
+        await this.browserService.initialize()
+      }
 
-      // Stap 3: Simuleer inloggen (demo)
-      await this.step('Inloggen in het systeem')
-      await this.simulateDelay(2000)
-      
-      // Stap 4: Analyseer instructies met AI
-      await this.step('Instructies analyseren met AI')
-      const analysisResult = await this.analyzeInstructions(this.currentTask)
-      this.log('info', 'AI Analyse voltooid', JSON.stringify(analysisResult, null, 2))
+      await this.step('AI commando interpreteren')
+      const commandResult = await this.commandInterpreter.interpretCommand(
+        this.currentTask, 
+        this.browserService.getStatus()
+      )
 
-      // Stap 5: Voer geplande acties uit
-      await this.step('Geplande acties uitvoeren')
-      await this.executeActions(analysisResult.actions || [])
+      this.log('info', 'AI Commando geïnterpreteerd', commandResult.explanation)
+
+      await this.step('Browser acties uitvoeren')
+      await this.executeBrowserActions(commandResult.actions || [])
 
       // Taak voltooid
       this.status = 'idle'
       this.currentTask = null
-      this.log('success', 'Taak succesvol voltooid', 'Alle stappen uitgevoerd')
+      this.log('success', 'Taak succesvol voltooid', commandResult.explanation)
       this.emitStatus()
 
     } catch (error) {
@@ -95,10 +77,73 @@ class AgentService {
       this.status = 'idle'
       this.currentTask = null
       this.emitStatus()
-    } finally {
-      if (this.page) {
-        await this.page.close()
-        this.page = null
+    }
+  }
+
+  async executeBrowserActions(actions) {
+    for (const action of actions) {
+      // Skip step() call for direct commands to avoid status issues
+      this.log('info', `Uitvoeren: ${action.description}`)
+      
+      try {
+        let result = null
+        
+        switch (action.type) {
+          case 'navigate':
+            result = await this.browserService.navigateTo(action.parameters.url)
+            this.log('info', `Genavigeerd naar: ${action.parameters.url}`)
+            break
+            
+          case 'search':
+            result = await this.browserService.search(action.parameters.query)
+            this.log('info', `Gezocht naar: ${action.parameters.query}`)
+            break
+            
+          case 'click':
+            result = await this.browserService.clickElement(action.parameters.selector)
+            this.log('info', `Geklikt op: ${action.parameters.selector}`)
+            break
+            
+          case 'type':
+            result = await this.browserService.typeText(action.parameters.selector, action.parameters.text)
+            this.log('info', `Getypt in ${action.parameters.selector}: "${action.parameters.text}"`)
+            break
+            
+          case 'scroll':
+            result = await this.browserService.scrollPage(action.parameters.direction, action.parameters.amount)
+            this.log('info', `Gescrolld ${action.parameters.direction}`)
+            break
+            
+          case 'wait':
+            result = await this.browserService.waitForElement(action.parameters.selector)
+            this.log('info', `Gewacht op element: ${action.parameters.selector}`)
+            break
+            
+          case 'screenshot':
+            result = await this.browserService.takeScreenshot()
+            this.log('info', 'Screenshot gemaakt')
+            break
+            
+          case 'getTitle':
+            result = await this.browserService.getPageTitle()
+            this.log('info', `Pagina titel: ${result}`)
+            break
+            
+          case 'getUrl':
+            result = await this.browserService.getPageUrl()
+            this.log('info', `Huidige URL: ${result}`)
+            break
+            
+          default:
+            this.log('warning', `Onbekende actie: ${action.type}`)
+        }
+        
+        // Korte pauze tussen acties
+        await this.simulateDelay(1000)
+        
+      } catch (error) {
+        this.log('error', `Fout bij uitvoeren actie ${action.type}`, error.message)
+        // Ga door naar volgende actie
       }
     }
   }
@@ -118,76 +163,6 @@ class AgentService {
     }
   }
 
-  async analyzeInstructions(instructions) {
-    if (!this.model) {
-      return {
-        summary: 'AI analyse niet beschikbaar',
-        actions: [
-          { type: 'navigate', target: 'dashboard' },
-          { type: 'search', query: 'verlopen contracten' },
-          { type: 'cleanup', target: 'ledigingen' }
-        ]
-      }
-    }
-
-    try {
-      const prompt = `
-Analyseer de volgende instructies voor een 21QUBZ platform agent:
-
-Instructies: "${instructions}"
-
-Geef een gestructureerd plan terug met:
-1. Een korte samenvatting van wat er moet gebeuren
-2. Een lijst met concrete acties die uitgevoerd moeten worden
-3. Mogelijke risico's of aandachtspunten
-
-Antwoord in JSON formaat.
-      `
-
-      const result = await this.model.generateContent(prompt)
-      const response = await result.response
-      const text = response.text()
-
-      try {
-        return JSON.parse(text)
-      } catch {
-        return {
-          summary: text,
-          actions: [{ type: 'manual', description: text }]
-        }
-      }
-    } catch (error) {
-      this.log('warning', 'AI analyse gefaald', error.message)
-      return {
-        summary: 'Fallback analyse',
-        actions: [{ type: 'manual', description: instructions }]
-      }
-    }
-  }
-
-  async executeActions(actions) {
-    for (const action of actions) {
-      await this.step(`Uitvoeren: ${action.type} - ${action.description || action.target || action.query || ''}`)
-      
-      // Simuleer actie uitvoering
-      await this.simulateDelay(1000 + Math.random() * 2000)
-      
-      switch (action.type) {
-        case 'navigate':
-          this.log('info', `Navigatie naar: ${action.target}`)
-          break
-        case 'search':
-          this.log('info', `Zoeken naar: ${action.query}`)
-          break
-        case 'cleanup':
-          this.log('info', `Opschonen: ${action.target}`)
-          break
-        default:
-          this.log('info', `Actie uitgevoerd: ${action.type}`)
-      }
-    }
-  }
-
   async simulateDelay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms))
   }
@@ -198,11 +173,6 @@ Antwoord in JSON formaat.
       this.currentTask = null
       this.currentTaskId = null
       this.isPaused = false
-      
-      if (this.page) {
-        await this.page.close()
-        this.page = null
-      }
       
       this.log('info', 'Taak gestopt door gebruiker')
       this.emitStatus()
@@ -220,11 +190,61 @@ Antwoord in JSON formaat.
     return this.status
   }
 
+  // Nieuwe methode voor real-time commando's
+  async executeCommand(command) {
+    try {
+      this.log('info', `Uitvoeren commando: "${command}"`)
+      
+      // Zorg dat browser draait
+      if (!this.browserService.isRunning) {
+        await this.browserService.initialize()
+      }
+
+      // Interpreteer commando
+      const commandResult = await this.commandInterpreter.interpretCommand(
+        command, 
+        this.browserService.getStatus()
+      )
+
+      this.log('info', 'Commando geïnterpreteerd', commandResult.explanation)
+
+      // Voer acties uit
+      await this.executeBrowserActions(commandResult.actions || [])
+
+      return {
+        success: true,
+        explanation: commandResult.explanation,
+        actions: commandResult.actions
+      }
+      
+    } catch (error) {
+      this.log('error', 'Fout bij uitvoeren commando', error.message)
+      return {
+        success: false,
+        error: error.message
+      }
+    }
+  }
+
+  async closeBrowser() {
+    try {
+      await this.browserService.close()
+      this.log('info', 'Browser gesloten')
+    } catch (error) {
+      this.log('error', 'Fout bij sluiten browser', error.message)
+    }
+  }
+
+  getBrowserStatus() {
+    return this.browserService.getStatus()
+  }
+
   getStatus() {
     return {
       status: this.isPaused ? 'paused' : this.status,
       currentTask: this.currentTask,
-      taskId: this.currentTaskId
+      taskId: this.currentTaskId,
+      browser: this.browserService.getStatus()
     }
   }
 
@@ -260,10 +280,7 @@ Antwoord in JSON formaat.
   }
 
   async cleanup() {
-    if (this.browser) {
-      await this.browser.close()
-      this.browser = null
-    }
+    await this.closeBrowser()
   }
 }
 

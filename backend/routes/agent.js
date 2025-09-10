@@ -74,4 +74,56 @@ router.get('/logs', (req, res) => {
   res.json(logs)
 })
 
+// Directe commando uitvoering
+router.post('/command', async (req, res) => {
+  try {
+    const { command } = req.body
+    
+    if (!command) {
+      return res.status(400).json({ success: false, error: 'Commando is vereist' })
+    }
+    
+    if (!agentService) {
+      agentService = new AgentService(req.io)
+      await agentService.initialize()
+    }
+    
+    const result = await agentService.executeCommand(command)
+    res.json(result)
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message })
+  }
+})
+
+// Browser status
+router.get('/browser/status', (req, res) => {
+  const status = agentService ? agentService.getBrowserStatus() : { isRunning: false }
+  res.json(status)
+})
+
+// Start browser
+router.post('/browser/start', async (req, res) => {
+  try {
+    if (!agentService) {
+      agentService = new AgentService(req.io)
+    }
+    await agentService.initialize()
+    res.json({ success: true, message: 'Browser gestart' })
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message })
+  }
+})
+
+// Stop browser
+router.post('/browser/stop', async (req, res) => {
+  try {
+    if (agentService) {
+      await agentService.closeBrowser()
+    }
+    res.json({ success: true, message: 'Browser gesloten' })
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message })
+  }
+})
+
 module.exports = router

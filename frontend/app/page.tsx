@@ -4,6 +4,7 @@ import { Play, Square, Eye, AlertCircle, CheckCircle, Clock, Wifi, WifiOff } fro
 import AgentControls from '@/components/AgentControls'
 import TaskMonitor from '@/components/TaskMonitor'
 import AgentLogs from '@/components/AgentLogs'
+import BrowserInterface from '@/components/BrowserInterface'
 import { useSocket } from '@/hooks/useSocket'
 
 export default function Dashboard() {
@@ -15,7 +16,10 @@ export default function Dashboard() {
     startAgent, 
     stopAgent, 
     pauseAgent, 
-    clearLogs 
+    clearLogs,
+    sendBrowserCommand,
+    startBrowser,
+    stopBrowser
   } = useSocket()
 
   return (
@@ -58,9 +62,9 @@ export default function Dashboard() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
           {/* Agent Controls */}
-          <div className="lg:col-span-1">
+          <div className="xl:col-span-1">
             <AgentControls 
               agentStatus={agentStatus.status}
               currentTask={agentStatus.currentTask || ''}
@@ -71,13 +75,28 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* Task Monitor & Logs */}
-          <div className="lg:col-span-2 space-y-8">
+          {/* Browser Interface */}
+          <div className="xl:col-span-2">
+            <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">AI Browser Control</h2>
+              <div className="h-96">
+                <BrowserInterface
+                  onCommand={sendBrowserCommand}
+                  isProcessing={agentStatus.status === 'running'}
+                  currentUrl={agentStatus.browser?.currentUrl || ''}
+                />
+              </div>
+            </div>
+            
             <TaskMonitor 
               agentStatus={agentStatus.status}
               currentTask={agentStatus.currentTask || ''}
               currentStep={currentStep}
             />
+          </div>
+
+          {/* Logs */}
+          <div className="xl:col-span-1">
             <AgentLogs 
               logs={logs}
               clearLogs={clearLogs}
