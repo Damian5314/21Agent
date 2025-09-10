@@ -1,0 +1,27 @@
+{
+  "name": "21agent-backend",
+  "version": "1.0.0",
+  "description": "Backend API voor 21Agent",
+  "main": "server.js",
+  "scripts": {
+    "dev": "nodemon server.js",
+    "start": "node server.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.5",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.0",
+    "playwright": "^1.40.0",
+    "@google/generative-ai": "^0.2.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "jest": "^29.7.0"
+  },
+  "keywords": ["ai", "agent", "automation"],
+  "author": "",
+  "license": "MIT"
+}
